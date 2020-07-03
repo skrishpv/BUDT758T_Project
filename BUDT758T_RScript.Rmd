@@ -1,0 +1,1164 @@
+---
+title: "Exploration, Explanation and Prediction in the world of Investing is Airbnb"
+output:
+  word_document: default
+  pdf_document:
+    latex_engine: xelatex
+  html_notebook: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+
+# This chunk shows/hides the code in your final report. When echo = TRUE, the code
+# is shown in the report. When echo = FALSE, the code is hidden from the final report.
+# We would like to see your code, so please leave the setting as is during the course.
+# This chunk will not show up in your reports, so you can safely ignore its existence.
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+```
+
+```{r, include=FALSE}
+# Load required libraries
+library(tidyverse)
+library(tidymodels)
+library(plotly)
+library(skimr)
+library(caret)
+library(xgboost)
+```
+
+## I. Executive Summary:
+
+
+## II. Kaggle Competition
+
+**Load and pre process the data:**
+
+We read the Train and Test data sets into data frames so that we can do pre processing steps to improve data quality.
+```{r, eval = FALSE}
+tsLCOrg <-
+  read_csv("airbnbTrain.csv") %>%  
+  rename_all(tolower)
+```
+
+```{r, eval = FALSE}
+head(tsLCOrg)
+```
+
+Remove all the text and highly biased variables. The text variables can be used in future for extracting new dummy variables to better explain the high booking rate. For the current scope of the project we are removing all the text variables.
+
+
+```{r, eval = FALSE}
+dfAirbnbTrainSet <-
+  tsLCOrg %>% 
+  select(-access, -description,-host_about,-host_location,-host_neighbourhood,-house_rules,-interaction,-latitude,-longitude,-neighbourhood,-neighborhood_overview,-notes,-space,-square_feet,-transit,-zipcode,-monthly_price,-weekly_price,-city, -state,-'{randomcontrol}',-host_acceptance_rate,-host_response_rate,-host_has_profile_pic,-is_business_travel_ready,-require_guest_phone_verification,-require_guest_profile_picture)
+```
+
+Extract features from the list variables "amenities" and store them into dummy variables for further use.
+
+```{r, eval = FALSE}
+dfAirbnbTrainSet$amenities <- lapply(strsplit(as.character(dfAirbnbTrainSet$amenities),split=','),trimws)
+
+dfAirbnbTrainSet <-
+  dfAirbnbTrainSet %>% 
+  mutate(no_of_amenities=lengths(amenities))
+
+dfAirbnbTrainSet <- dfAirbnbTrainSet %>% 
+  mutate(pool = str_detect(dfAirbnbTrainSet$amenities,"Pool"),
+         wifi = str_detect(dfAirbnbTrainSet$amenities,"Wifi"),
+         essentials = str_detect(dfAirbnbTrainSet$amenities,"Essentials"),
+         free_parking_on_premises= str_detect(dfAirbnbTrainSet$amenities,"Free parking on premises"),
+         long_term_stays_allowed = str_detect(dfAirbnbTrainSet$amenities,"Long term stays allowed"),
+         family_kids_friendly = str_detect(dfAirbnbTrainSet$amenities,"Family/kid friendly"),
+         laptop_friendly_workspace = str_detect(dfAirbnbTrainSet$amenities, "Laptop friendly workspace"),
+         refridgerator = str_detect(dfAirbnbTrainSet$amenities,"Refrigerator"),
+         coffee_maker = str_detect(dfAirbnbTrainSet$amenities, "Coffee maker"),
+         gym = str_detect(dfAirbnbTrainSet$amenities, "Gym"),
+         self_check_in = str_detect(dfAirbnbTrainSet$amenities, "Self check-in"),
+         cooking_basics = str_detect(dfAirbnbTrainSet$amenities, "Cooking basics"),
+         microwave = str_detect(dfAirbnbTrainSet$amenities, "Microwave"),
+         smoke_detector = str_detect(dfAirbnbTrainSet$amenities, "Smoke detector"),
+         host_greets = str_detect(dfAirbnbTrainSet$amenities, "Host greets you"),
+         first_aid = str_detect(dfAirbnbTrainSet$amenities, "First aid kit"),
+         washer = str_detect(dfAirbnbTrainSet$amenities, "Washer"),
+         dryer = str_detect(dfAirbnbTrainSet$amenities, "Dryer"),
+         bedroom_lock = str_detect(dfAirbnbTrainSet$amenities, "Lock on bedroom door"),
+         hot_water = str_detect(dfAirbnbTrainSet$amenities, "Hot water"),
+         heating = str_detect(dfAirbnbTrainSet$amenities, "Heating"),
+         fire_extinguisher = str_detect(dfAirbnbTrainSet$amenities, "Fire extinguisher"),
+         safety_card = str_detect(dfAirbnbTrainSet$amenities, "Safety card"),
+         private_entrance = str_detect(dfAirbnbTrainSet$amenities, "Private entrance"),
+         dishes = str_detect(dfAirbnbTrainSet$amenities, "Dishes and silverware"),
+         luggage = str_detect(dfAirbnbTrainSet$amenities, "Luggage dropoff allowed"),
+         cable = str_detect(dfAirbnbTrainSet$amenities, "Cable TV"),
+         breakfast = str_detect(dfAirbnbTrainSet$amenities, "Breakfast"),
+         dishwasher = str_detect(dfAirbnbTrainSet$amenities, "Dishwasher"),
+         events = str_detect(dfAirbnbTrainSet$amenities, "Suitable for events"),
+         linens = str_detect(dfAirbnbTrainSet$amenities, "Bed linens"),
+         balcony = str_detect(dfAirbnbTrainSet$amenities, "Patio or balcony"),
+         garden = str_detect(dfAirbnbTrainSet$amenities, "Garden or backyard"),
+         living_room = str_detect(dfAirbnbTrainSet$amenities, "Private living room"),
+         lockbox = str_detect(dfAirbnbTrainSet$amenities, "Lockbox"),
+         fireplace = str_detect(dfAirbnbTrainSet$amenities, "Indoor fireplace"),
+         hr_checkin = str_detect(dfAirbnbTrainSet$amenities, "24-hour check-in"),
+         bbq = str_detect(dfAirbnbTrainSet$amenities, "BBQ grill"),
+         internet = str_detect(dfAirbnbTrainSet$amenities, "Internet"),
+         hairdryer = str_detect(dfAirbnbTrainSet$amenities, "Hair dryer"),
+         air_con = str_detect(dfAirbnbTrainSet$amenities, "Air conditioning"),
+         cleaning = str_detect(dfAirbnbTrainSet$amenities, "Cleaning before checkout"),
+         entryway = str_detect(dfAirbnbTrainSet$amenities, "Wide entrance"),
+         pets = str_detect(dfAirbnbTrainSet$amenities, "Pets allowed"),
+         smoking = str_detect(dfAirbnbTrainSet$amenities, "Smoking allowed"),
+         shower = str_detect(dfAirbnbTrainSet$amenities, "Step-free shower"),
+         hot_tub = str_detect(dfAirbnbTrainSet$amenities, "Hot tub"),
+         no_stairs = str_detect(dfAirbnbTrainSet$amenities, "No stairs or steps to enter"),
+         paid_parking = str_detect(dfAirbnbTrainSet$amenities, "Paid parking off premises"))
+
+
+head(dfAirbnbTrainSet$no_of_amenities)
+```
+
+Extract features from the list variables "host_verifications" and store them into dummy variables for further use.
+
+```{r, eval = FALSE}
+dfAirbnbTrainSet$host_verifications <- lapply(strsplit(as.character(dfAirbnbTrainSet$host_verifications),split=','),trimws)
+
+dfAirbnbTrainSet <-
+  dfAirbnbTrainSet %>% 
+  mutate(no_of_host_verifications=lengths(host_verifications))
+
+dfAirbnbTrainSet <- dfAirbnbTrainSet %>% 
+  mutate(government_id = str_detect(dfAirbnbTrainSet$host_verifications,"government_id"),
+         reviews = str_detect(dfAirbnbTrainSet$host_verifications,"reviews"),
+         jumio = str_detect(dfAirbnbTrainSet$host_verifications,"jumio"),
+         kba = str_detect(dfAirbnbTrainSet$host_verifications, "kba"))
+
+head(dfAirbnbTrainSet$no_of_host_verifications)
+```
+
+Drop the list based columns which are no longer needed as we have extracted the required information from them
+
+```{r, eval = FALSE}
+dfFinalTrain <-
+  dfFinalTrain %>% 
+    select(-amenities,-host_verifications)
+```
+
+Reduce the levels in the factor variables "market" and "property_type". This helps us remove the levels which have very few observations. These levels may cause a bias in the model and also lead to rank-deficiency errors in the model.
+
+```{r, eval = FALSE}
+dfFinalTrain <-
+  dfAirbnbTrainSet %>% 
+  group_by(market) %>% 
+  mutate(Flag = ifelse (n() < 100, 1, 0)) %>% 
+  ungroup %>% 
+  mutate(market = ifelse(Flag == 1, "Other (Domestic)", market)) %>% 
+  select(-Flag)
+```
+
+```{r, eval = FALSE}
+dfFinalTrain$market[dfFinalTrain$market=="South Bay CA"]<-"South Bay, CA"
+dfFinalTrain$market[dfFinalTrain$market=="East Bay CA"]<-"East Bay, CA"
+```
+
+```{r, eval = FALSE}
+dfFinalTrain <-
+  dfFinalTrain %>% 
+  group_by(property_type) %>% 
+  mutate(Flag = ifelse (n() < 20, 1, 0)) %>% 
+  ungroup %>% 
+  mutate(property_type = ifelse(Flag == 1, "Other", property_type)) %>% 
+  select(-Flag)
+```
+
+Drop the rows from the test data where we have NAs and we can see that it could be a mis representation of the data. Like a house must have a bathroom, beds and market information. But if the listing has these columns as NA we cannot impute them as these are data discrepancies.
+
+```{r, eval = FALSE}
+dfFinalTrain <-
+  dfFinalTrain %>% 
+    drop_na(host_is_superhost,bathrooms,beds,market)
+```
+
+Perform similar operations on the Test data to make it synchronous with the Train data. This is essential as the discrepancies between the two will stop us from being able to generate the prediccted probabilities as the new levels or variables in test data cannot be inderstood by the model that was built on the train data.
+
+```{r, eval = FALSE}
+tsLCOrgTest <-
+  read_csv("airbnbTest.csv") %>%  
+  rename_all(tolower)
+```
+
+```{r, eval = FALSE}
+dfAirbnbTestSet <-
+  tsLCOrgTest %>% 
+  select(-access, -description,-host_about,-host_location,-host_neighbourhood,-house_rules,-interaction,-latitude,-longitude,-neighbourhood,-neighborhood_overview,-notes,-space,-square_feet,-transit,-zipcode,-monthly_price,-weekly_price,-city, -state,-'{randomcontrol}',-host_acceptance_rate,host_response_rate,-host_has_profile_pic,-is_business_travel_ready,-require_guest_phone_verification,-require_guest_profile_picture)
+```
+
+```{r, eval = FALSE}
+
+dfAirbnbTestSet$amenities <- lapply(strsplit(as.character(dfAirbnbTestSet$amenities),split=','),trimws)
+
+dfAirbnbTestSet <-
+  dfAirbnbTestSet %>% 
+  mutate(no_of_amenities=lengths(amenities))
+
+dfAirbnbTestSet <- dfAirbnbTestSet %>% 
+  mutate(pool = str_detect(dfAirbnbTestSet$amenities,"Pool"),
+         wifi = str_detect(dfAirbnbTestSet$amenities,"Wifi"),
+         essentials = str_detect(dfAirbnbTestSet$amenities,"Essentials"),
+         free_parking_on_premises= str_detect(dfAirbnbTestSet$amenities,"Free parking on premises"),
+         long_term_stays_allowed = str_detect(dfAirbnbTestSet$amenities,"Long term stays allowed"),
+         family_kids_friendly = str_detect(dfAirbnbTestSet$amenities,"Family/kid friendly"),
+         laptop_friendly_workspace = str_detect(dfAirbnbTestSet$amenities, "Laptop friendly workspace"),
+         refridgerator = str_detect(dfAirbnbTestSet$amenities,"Refrigerator"),
+         coffee_maker = str_detect(dfAirbnbTestSet$amenities, "Coffee maker"),
+         gym = str_detect(dfAirbnbTestSet$amenities, "Gym"),
+         self_check_in = str_detect(dfAirbnbTestSet$amenities, "Self check-in"),
+         cooking_basics = str_detect(dfAirbnbTestSet$amenities, "Cooking basics"),
+         microwave = str_detect(dfAirbnbTestSet$amenities, "Microwave"),
+         smoke_detector = str_detect(dfAirbnbTestSet$amenities, "Smoke detector"),
+         host_greets = str_detect(dfAirbnbTestSet$amenities, "Host greets you"),
+         first_aid = str_detect(dfAirbnbTestSet$amenities, "First aid kit"),
+         washer = str_detect(dfAirbnbTestSet$amenities, "Washer"),
+         dryer = str_detect(dfAirbnbTestSet$amenities, "Dryer"),
+         bedroom_lock = str_detect(dfAirbnbTestSet$amenities, "Lock on bedroom door"),
+         hot_water = str_detect(dfAirbnbTestSet$amenities, "Hot water"),
+         heating = str_detect(dfAirbnbTestSet$amenities, "Heating"),
+         fire_extinguisher = str_detect(dfAirbnbTestSet$amenities, "Fire extinguisher"),
+         safety_card = str_detect(dfAirbnbTestSet$amenities, "Safety card"),
+         private_entrance = str_detect(dfAirbnbTestSet$amenities, "Private entrance"),
+         dishes = str_detect(dfAirbnbTestSet$amenities, "Dishes and silverware"),
+         luggage = str_detect(dfAirbnbTestSet$amenities, "Luggage dropoff allowed"),
+         cable = str_detect(dfAirbnbTestSet$amenities, "Cable TV"),
+         breakfast = str_detect(dfAirbnbTestSet$amenities, "Breakfast"),
+         dishwasher = str_detect(dfAirbnbTestSet$amenities, "Dishwasher"),
+         events = str_detect(dfAirbnbTestSet$amenities, "Suitable for events"),
+         linens = str_detect(dfAirbnbTestSet$amenities, "Bed linens"),
+         balcony = str_detect(dfAirbnbTestSet$amenities, "Patio or balcony"),
+         garden = str_detect(dfAirbnbTestSet$amenities, "Garden or backyard"),
+         living_room = str_detect(dfAirbnbTestSet$amenities, "Private living room"),
+         lockbox = str_detect(dfAirbnbTestSet$amenities, "Lockbox"),
+         fireplace = str_detect(dfAirbnbTestSet$amenities, "Indoor fireplace"),
+         hr_checkin = str_detect(dfAirbnbTestSet$amenities, "24 -hour check-in"),
+         bbq = str_detect(dfAirbnbTestSet$amenities, "BBQ grill"),
+         internet = str_detect(dfAirbnbTestSet$amenities, "Internet"),
+         hairdryer = str_detect(dfAirbnbTestSet$amenities, "Hair dryer"),
+         air_con = str_detect(dfAirbnbTestSet$amenities, "Air conditioning"),
+         cleaning = str_detect(dfAirbnbTestSet$amenities, "Cleaning before checkout"),
+         entryway = str_detect(dfAirbnbTestSet$amenities, "Wide entrance"),
+         pets = str_detect(dfAirbnbTestSet$amenities, "Pets allowed"),
+         smoking = str_detect(dfAirbnbTestSet$amenities, "Smoking allowed"),
+         shower = str_detect(dfAirbnbTestSet$amenities, "Step-free shower"),
+         hot_tub = str_detect(dfAirbnbTestSet$amenities, "Hot tub"),
+         no_stairs = str_detect(dfAirbnbTestSet$amenities, "No stairs or steps to enter"),
+         paid_parking = str_detect(dfAirbnbTestSet$amenities, "Paid parking off premises"))
+
+head(dfAirbnbTestSet$no_of_amenities)
+```
+
+```{r, eval = FALSE}
+dfAirbnbTestSet$host_verifications <- lapply(strsplit(as.character(dfAirbnbTestSet$host_verifications),split=','),trimws)
+
+dfAirbnbTestSet <-
+  dfAirbnbTestSet %>% 
+  mutate(no_of_host_verifications=lengths(host_verifications))
+
+dfAirbnbTestSet <- dfAirbnbTestSet %>% 
+  mutate(government_id = str_detect(dfAirbnbTestSet$host_verifications,"government_id"),
+         reviews = str_detect(dfAirbnbTestSet$host_verifications,"reviews"),
+         jumio = str_detect(dfAirbnbTestSet$host_verifications,"jumio"),
+         kba = str_detect(dfAirbnbTestSet$host_verifications, "kba"))
+
+head(dfAirbnbTestSet$no_of_host_verifications)
+```
+
+```{r, eval = FALSE}
+dfFinalTest <-
+  dfAirbnbTestSet %>% 
+  group_by(market) %>% 
+  mutate(Flag = ifelse (n() < 100, 1, 0)) %>% 
+  ungroup %>% 
+  mutate(market = ifelse(Flag == 1, "Other (Domestic)", market)) %>% 
+  select(-Flag)
+```
+
+```{r, eval = FALSE}
+dfFinalTest <-
+  dfFinalTest %>% 
+  group_by(property_type) %>% 
+  mutate(Flag = ifelse (n() < 50, 1, 0)) %>% 
+  ungroup %>% 
+  mutate(property_type = ifelse(Flag == 1, "Other", property_type)) %>% 
+  select(-Flag)
+```
+
+
+```{r, eval = FALSE}
+dfFinalTest$market[dfFinalTest$market=="South Bay CA"]<-"South Bay, CA"
+dfFinalTest$market[dfFinalTest$market=="East Bay CA"]<-"East Bay, CA"
+```
+
+
+```{r, eval = FALSE}
+dfFinalTest$host_response_time[is.na(dfFinalTest$host_response_time)]<-'N/A'
+dfFinalTest$host_identity_verified[is.na(dfFinalTest$host_identity_verified)]<-FALSE
+dfFinalTest$host_is_superhost[is.na(dfFinalTest$host_is_superhost)]<-FALSE
+
+dfFinalTest$bathrooms[is.na(dfFinalTest$bathrooms)]<-1
+dfFinalTest$beds[is.na(dfFinalTest$beds)]<-2
+
+dfFinalTest$host_listings_count[is.na(dfFinalTest$host_listings_count)]<-1
+dfFinalTest$host_since[is.na(dfFinalTest$host_since)]<-as.Date('2015-11-09')
+```
+
+```{r, eval = FALSE}
+dfFinalTest <-
+  dfFinalTest %>% 
+    select(-amenities,-host_verifications)
+```
+
+Next we re-code the variable type in the system. We convert the variables to numeric, factor and date so that we can easily build models using them. We also had to perform some basic string operations to convert the currency data into numeric format. We also performed some imputations in the data wherever applicable.
+
+```{r, eval = FALSE}
+dfFinalTrain$cleaning_fee <- as.numeric(gsub('\\$|,','', dfFinalTrain$cleaning_fee))
+dfFinalTest$cleaning_fee <- as.numeric(gsub('\\$|,','', dfFinalTest$cleaning_fee))
+```
+
+```{r, eval = FALSE}
+dfFinalTrain$cleaning_fee[is.na(dfFinalTrain$cleaning_fee)]<-88.6
+dfFinalTest$cleaning_fee[is.na(dfFinalTest$cleaning_fee)]<-94.9
+```
+
+
+```{r, eval = FALSE}
+dfFinalTrain$security_deposit <- as.numeric(gsub('\\$|,','', dfFinalTrain$security_deposit))
+dfFinalTest$security_deposit <- as.numeric(gsub('\\$|,','', dfFinalTest$security_deposit))
+```
+
+```{r, eval = FALSE}
+dfFinalTrain$security_deposit[is.na(dfFinalTrain$security_deposit)]<-231.0
+dfFinalTest$security_deposit[is.na(dfFinalTest$security_deposit)]<-228.0
+```
+
+```{r, eval = FALSE}
+dfFinalTest$host_listings_count[is.na(dfFinalTest$host_listings_count)]<-1
+```
+
+```{r, eval = FALSE}
+dfFinalTrain$review_scores_rating[is.na(dfFinalTrain$review_scores_rating)]<- 0
+dfFinalTest$review_scores_rating[is.na(dfFinalTest$review_scores_rating)]<-0
+
+dfFinalTrain$review_scores_accuracy[is.na(dfFinalTrain$review_scores_accuracy)]<-0
+dfFinalTest$review_scores_accuracy[is.na(dfFinalTest$review_scores_accuracy)]<-0
+  
+dfFinalTrain$review_scores_checkin[is.na(dfFinalTrain$review_scores_checkin)]<-0
+dfFinalTest$review_scores_checkin[is.na(dfFinalTest$review_scores_checkin)]<-0
+  
+dfFinalTrain$review_scores_cleanliness[is.na(dfFinalTrain$review_scores_cleanliness)]<-0
+dfFinalTest$review_scores_cleanliness[is.na(dfFinalTest$review_scores_cleanliness)]<-0
+
+dfFinalTrain$review_scores_communication[is.na(dfFinalTrain$review_scores_communication)]<-0
+dfFinalTest$review_scores_communication[is.na(dfFinalTest$review_scores_communication)]<-0
+  
+dfFinalTrain$review_scores_location[is.na(dfFinalTrain$review_scores_location)]<-0
+dfFinalTest$review_scores_location[is.na(dfFinalTest$review_scores_location)]<-0
+
+dfFinalTrain$review_scores_value[is.na(dfFinalTrain$review_scores_value)]<-0
+dfFinalTest$review_scores_value[is.na(dfFinalTest$review_scores_value)]<-0
+```
+
+```{r, eval = FALSE}
+dfFinalTest$host_since[is.na(dfFinalTest$host_since)]<-as.Date('2015-11-09')
+```
+
+```{r, eval = FALSE}
+dfFinalTrain$bedrooms[is.na(dfFinalTrain$bedrooms)]<-1
+dfFinalTest$bedrooms[is.na(dfFinalTest$bedrooms)]<-1
+```
+
+```{r, eval = FALSE}
+dfFinalTrain$price <- as.numeric(gsub('\\$|,','', dfFinalTrain$price))
+dfFinalTrain$extra_people <- as.numeric(gsub('\\$|,','', dfFinalTrain$extra_people))
+dfFinalTest$price <- as.numeric(gsub('\\$|,','', dfFinalTest$price))
+dfFinalTest$extra_people<- as.numeric(gsub('\\$|,','', dfFinalTest$extra_people))
+
+dfFinalTrain$no_of_amenities <- as.numeric(dfFinalTrain$no_of_amenities)
+dfFinalTest$no_of_amenities <- as.numeric(dfFinalTest$no_of_amenities)
+```
+
+```{r, eval = FALSE}
+
+colsToFactorTrain <-
+  c('high_booking_rate', 'cancellation_policy', 'instant_bookable','host_identity_verified','host_is_superhost',"host_response_time","is_location_exact","market","requires_license","room_type","property_type","bed_type","government_id","jumio","reviews","free_parking_on_premises","pool","wifi","essentials","long_term_stays_allowed","family_kids_friendly","laptop_friendly_workspace","refridgerator", "coffee_maker","gym","self_check_in","cooking_basics","microwave","smoke_detector","host_greets","washer","dryer","first_aid","bedroom_lock","hot_water","kba","heating", "fire_extinguisher", "safety_card","private_entrance","dishes","luggage","cable","breakfast","dishwasher","events","linens","balcony","garden","living_room","lockbox","fireplace","hr_checkin","bbq","internet","hairdryer","air_con","cleaning","entryway","pets","smoking","shower","hot_tub","no_stairs","wheelchair","paid_parking")
+
+colsToFactorTest <-
+  c('cancellation_policy', 'instant_bookable','host_identity_verified','host_is_superhost',"host_response_time","is_location_exact","market","requires_license","room_type","property_type","bed_type","government_id","jumio","reviews","free_parking_on_premises","pool","wifi","essentials","long_term_stays_allowed","family_kids_friendly","laptop_friendly_workspace","refridgerator", "coffee_maker","gym","self_check_in","cooking_basics","microwave","smoke_detector","host_greets","washer","dryer","first_aid","bedroom_lock","hot_water","kba","heating", "fire_extinguisher", "safety_card","private_entrance","dishes","luggage","cable","breakfast","dishwasher","events","linens","balcony","garden","living_room","lockbox","fireplace","hr_checkin","bbq","internet","hairdryer","air_con","cleaning","entryway","pets","smoking","shower","hot_tub","no_stairs","wheelchair","paid_parking")
+```
+
+
+```{r, eval = FALSE}
+dfFinalTrain <-
+  dfFinalTrain %>% 
+   mutate_at(colsToFactorTrain, ~factor(.))
+
+dfFinalTest <-
+  dfFinalTest%>% 
+   mutate_at(colsToFactorTest, ~factor(.))
+```
+
+**Building the Model**
+
+Once we have the train and test datasets ready with all the required variables and the correct formatting we can go ahead and build the model.
+
+We tried a lot of models ranging from basic linear probability model, to logistic model to ensemble models like bagged trees, random forests and XGBoost. Finally we choose the XGBoost model as it gave a better performance in terms of AUC which was the evaluating criteria for the Kaggle Competition. 
+Once we finalized the model we performed a grid tuning for finding the optimal parameters for the model. This enabled us to fine tune the model to get the best result out of it.
+
+The tune grid used for the purpose is as below,
+
+```{r, eval = FALSE}
+tune.gridxgb <- expand.grid(eta = c(0.05,0.3, 0.075), # 3 
+                      nrounds = c(50, 75, 100),  # 3
+                      max_depth = 4:7,  # 4
+                      min_child_weight = c(2.0, 2.25), #2 
+                      colsample_bytree = c(0.3, 0.4, 0.5), # 3
+                      gamma = 0, #1
+                      subsample = 1)  # 1
+# 3*3*4*2*3*1*1 = 216
+dim(tune.gridxgb)
+```
+
+We used 10-fold cross validation to validate and estimate the best model tuning parameters.
+
+```{r, eval = FALSE}
+train.control <- trainControl(
+                           method = "repeatedcv",
+                           number = 10, ## 10-fold CV
+                           repeats = 3,## repeated three times
+                           summaryFunction = twoClassSummary, 
+                           classProbs = TRUE
+                           )
+```
+
+Finally, we built the XGBoost model using the "xgbTree" method in Caret library. The performance metric to be used for deciding the best model was set as "ROC" which is the AUC value for each cross validation.
+
+```{r, eval = FALSE}
+gridxgbFit <- train(make.names(high_booking_rate)~.-id, 
+              data=dfFinalTrain, 
+              method = "xgbTree", 
+              tuneGrid =tune.gridxgb,
+              trControl = train.control,
+              metric="ROC"
+            )
+```
+
+Once the results were obtained, we validated the maximum AUC achieved by the model and the corresponding tuning parameters. This, helped us judge the model before actually uploading it to Kaggle.
+
+```{r, eval = FALSE}
+gridxgbFit$results %>% 
+  arrange(desc(ROC))
+```
+
+The Variable importance of the model helped us understand which are the important variables towards the prediction.
+The Important variables from this output are as below,
+review_scores_checkin, review_scores_rating, host_is_superhostTRUE, host_listings_count, review_scores_value, host_since, self_check_in, family_kids_friendly, minimum_nights, reviews, cleaning_fee, hot_waterTRUE, host_response_timewithin an hour, price, internet.
+
+```{r, eval = FALSE}
+varImp(gridxgbFit)$importance %>%    # Add scale=FALSE inside VarImp if you don't want to scale
+  rownames_to_column(var = "Variable") %>%
+  mutate(Importance = scales::percent(Overall/100)) %>% 
+  arrange(desc(Overall)) %>% 
+  as_tibble()
+```
+
+**Making predictions**
+
+Generate the predicted probabilities for each entry in the test data set and store the value as a new column called "predictedProb".
+
+```{r, eval = FALSE}
+resultsXGBoost <-
+  gridxgbbFit %>% 
+  predict(dfFinalTest, type='prob') %>% 
+  bind_cols(dfFinalTest, predictedProb=.$X1)
+```
+
+Rename the "predictedProb" column to "high_booking_rate" to match with the Kaggle upload format and guidelines.
+
+```{r, eval = FALSE}
+
+uploadDf <-
+  resultsXGBoost %>% 
+    select(predictedProb, id) %>% 
+    rename(high_booking_rate = predictedProb )
+```
+
+Generate the file to upload into the Kaggle submissions and store it in the machine. 
+
+```{r, eval = FALSE}
+
+uploadDf %>%
+  write_csv("data/upload/KaggleComp_Upload.csv")
+```
+
+## III. Getting the rows for the "Las Vegas" Market
+
+Load the entire train set into the R environment
+
+```{r results="hide"}
+dfAirBnBTrain <- read_csv("data/airbnbTrain.csv")
+```
+
+We extract the data for Las Vegas from the entire dataset using the "randomControl" which is used for housekeeping purposes in the dataset. We take all the rows which have randomControl between 111000 and 112000 and then we also filter by market to remove any anomalous rows that have entered the list.
+We validated the row count for Las Vegas and found that the extracted dataframe contains all the Las Vegas listings.
+
+```{r}
+
+dfLasVegas <-
+  dfAirBnBTrain %>% 
+    filter(`{randomControl}` >= 111000 & `{randomControl}` <112000) %>% 
+    filter(market == "Las Vegas")
+  
+  
+```
+
+Ensure that there are no listings outside of Las Vegas in the data.
+
+```{r}
+unique(dfLasVegas$market)
+```
+
+Store the data for future Reference.
+
+```{r, eval = FALSE}
+dfLasVegas %>%
+  write_csv("data/LasVegasData.csv")
+```
+
+## IV. Data Cleaning and Preprocessing
+
+Data cleaning and preprocessing is again the most important step in any analysis. This helps us to build the best possible model from the available data.
+
+```{r, results="hide"}
+dfLasVegasFull <-
+  read_csv("LasVegasData.csv") %>%  
+  rename_all(tolower)
+```
+
+Remove all the variables that will not be used for analysis. These include text variables, variables with highly biased observations and the variables which have no significance to the business problem being studied.
+
+```{r}
+dfLasVegas <-
+  dfLasVegasFull %>% 
+  select(-access, -description,-host_about,-host_location,-host_neighbourhood,-house_rules,-interaction,-latitude,-longitude,-neighbourhood,-neighborhood_overview,-notes,-space,-square_feet,-transit,-zipcode,-monthly_price,-weekly_price,-city, -state,-'{randomcontrol}',-host_acceptance_rate,-host_response_rate,-host_has_profile_pic,-is_business_travel_ready,-require_guest_phone_verification,-require_guest_profile_picture)
+```
+
+Extract more information from the variables and create dummy variables to hold the new information.
+
+```{r}
+dfLasVegas$amenities <- lapply(strsplit(as.character(dfLasVegas$amenities),split=','),trimws)
+
+dfLasVegas <-
+  dfLasVegas %>% 
+  mutate(no_of_amenities=lengths(amenities))
+
+dfLasVegas <- dfLasVegas %>% 
+  mutate(pool = str_detect(dfLasVegas$amenities,"Pool"),
+         wifi = str_detect(dfLasVegas$amenities,"Wifi"),
+         essentials = str_detect(dfLasVegas$amenities,"Essentials"),
+         free_parking_on_premises= str_detect(dfLasVegas$amenities,"Free parking on premises"),
+         long_term_stays_allowed = str_detect(dfLasVegas$amenities,"Long term stays allowed"),
+         family_kids_friendly = str_detect(dfLasVegas$amenities,"Family/kid friendly"),
+         laptop_friendly_workspace = str_detect(dfLasVegas$amenities, "Laptop friendly workspace"),
+         refridgerator = str_detect(dfLasVegas$amenities,"Refrigerator"),
+         coffee_maker = str_detect(dfLasVegas$amenities, "Coffee maker"),
+         gym = str_detect(dfLasVegas$amenities, "Gym"))
+
+```
+
+```{r}
+dfLasVegas$host_verifications <- lapply(strsplit(as.character(dfLasVegas$host_verifications),split=','),trimws)
+
+dfLasVegas <-
+  dfLasVegas %>% 
+  mutate(no_of_host_verifications=lengths(host_verifications))
+
+dfLasVegas <- dfLasVegas %>% 
+  mutate(government_id = str_detect(dfLasVegas$host_verifications,"government_id"),
+         reviews = str_detect(dfLasVegas$host_verifications,"reviews"),
+         jumio = str_detect(dfLasVegas$host_verifications,"jumio"))
+```
+
+Drop the list based columns which are no longer needed as we have extracted the required information from them
+```{r}
+dfLasVegas <-
+  dfLasVegas %>% 
+    select(-amenities,-host_verifications)
+```
+
+Reduce the levels in the factor variables "market" and "property_type". This helps us remove the levels which have very few observations. These levels may cause a bias in the model and also lead to rank-deficiency errors in the model.
+
+```{r}
+dfLasVegas <-
+  dfLasVegas %>% 
+  group_by(property_type) %>% 
+  mutate(Flag = ifelse (n() < 20, 1, 0)) %>% 
+  ungroup %>% 
+  mutate(property_type = ifelse(Flag == 1, "OTHER", property_type)) %>% 
+  select(-Flag)
+```
+
+Next we re-code the variable type in the system. We convert the variables to numeric, factor and date so that we can easily build models using them. We also had to perform some basic string operations to convert the currency data into numeric format. We also performed some imputations in the data wherever applicable.
+
+```{r}
+dfLasVegas$host_response_time[is.na(dfLasVegas$host_response_time)]<-'N/A'
+dfLasVegas$host_identity_verified[is.na(dfLasVegas$host_identity_verified)]<-FALSE
+dfLasVegas$host_is_superhost[is.na(dfLasVegas$host_is_superhost)]<-FALSE
+
+dfLasVegas$bathrooms[is.na(dfLasVegas$bathrooms)]<-1
+dfLasVegas$beds[is.na(dfLasVegas$beds)]<-2
+dfLasVegas$bedrooms[is.na(dfLasVegas$bedrooms)]<-2
+
+dfLasVegas$host_listings_count[is.na(dfLasVegas$host_listings_count)]<-1
+dfLasVegas$host_since[is.na(dfLasVegas$host_since)]<-as.Date('2015-11-09')
+```
+
+```{r}
+dfLasVegas$price <- as.numeric(gsub('\\$|,','', dfLasVegas$price))
+dfLasVegas$extra_people <- as.numeric(gsub('\\$|,','', dfLasVegas$extra_people))
+dfLasVegas$cleaning_fee <- as.numeric(gsub('\\$|,','', dfLasVegas$cleaning_fee))
+dfLasVegas$security_deposit <- as.numeric(gsub('\\$|,','', dfLasVegas$security_deposit))
+```
+
+```{r}
+dfLasVegas$cleaning_fee[is.na(dfLasVegas$cleaning_fee)]<-99.2
+dfLasVegas$security_deposit[is.na(dfLasVegas$security_deposit)]<-0
+```
+
+```{r, eval=FALSE}
+dfLasVegas$review_scores_rating[is.na(dfLasVegas$review_scores_rating)]<-0
+
+dfLasVegas$review_scores_accuracy[is.na(dfLasVegas$review_scores_accuracy)]<-0
+
+dfLasVegas$review_scores_checkin[is.na(dfLasVegas$review_scores_checkin)]<-0
+
+dfLasVegas$review_scores_cleanliness[is.na(dfLasVegas$review_scores_cleanliness)]<-0
+
+dfLasVegas$review_scores_communication[is.na(dfLasVegas$review_scores_communication)]<-0
+  
+dfLasVegas$review_scores_location[is.na(dfLasVegas$review_scores_location)]<-0
+
+dfLasVegas$review_scores_value[is.na(dfLasVegas$review_scores_value)]<-0
+```
+
+
+
+```{r}
+
+colsToFactor <-
+  c('high_booking_rate','bed_type', 'cancellation_policy', 'host_response_time', 'market','property_type','room_type', 'host_identity_verified','host_is_superhost','instant_bookable',"is_location_exact","requires_license","pool","wifi","essentials","free_parking_on_premises","long_term_stays_allowed","family_kids_friendly","laptop_friendly_workspace","refridgerator","coffee_maker","gym","government_id","reviews","jumio")
+
+```
+
+```{r}
+dfLasVegas <-
+   dfLasVegas %>% 
+   mutate_at(colsToFactor, ~factor(.))
+```
+
+Drop "market" and "requires_license" variables as these variables have the same value for all the listings in the dataset. This is as expected and we do not need these values to explain any features. Market is common for all listings as we are studying the same market Las Vegas. Also, requires license is not significant as the regulations on short term rentals in Las Vegas require all owners to have a license before they can list their properties on Airbnb.
+
+```{r}
+dfLasVegas <-
+  dfLasVegas %>% 
+  select(-market,-requires_license)
+```
+
+## V. Understanding the Market
+
+Now that we have the data ready lets try and understand the market we are studying and the investment we are making.
+
+**Features of the Market**
+
+* Airbnb is primarily a combination of Hospitality and Real estate Industry.
+* Las Vegas is famous for its casino industry together with the hotel industry because most casinos are owned by the hotel. 
+* No Seasonality in the market as tourism flourishes in Las Vegas all year round.
+* Growing tourism industry with around 42.5 Million people visiting Las Vegas in 2019 which was a million more than 2018.
+* Las Vegas has about 113 Hotels with over 100, 000 beds.
+* Las Vegas has about 6000 AirBnb listings with about 15000 beds.
+* Out of these 4782 listings have a low booking rate which is about 77% of the total listings.
+
+**So what is the market like in Vegas**
+
+To understand the investment options lets study the market from 4 perspectives,
+
+1. **Competition**
+
+Clearly, in Vegas the main competition to Airbnb is Hotels,
+
+*Hotels*
+
+* Hotels have the business center and located in the business district, and people can save time on the transportation. This makes them an attractive choice     for business conventions and meetings.
+* Most of the hotels in Las Vegas are big brands and chain hotels like MGM, they have the reputation for comfortable room, fancy environment and professional    service.
+* Price plays little role for small groups. The Airbnb and the Hotel listings for 2 people cost the same.
+* The hotel has a comparable advantage in the Strip area since they offer complimentary services like, pool and casino access and entertainment shows.
+* All these things make them a great choice for the avid traveller.
+
+*Airbnb*
+
+* 10% of Visitors came to Vegas for a Business Convention. Airbnb misses out this chunk of visitors.
+* Sometimes, the condition of Airbnb is not as good as it shown on the web page, which is under-expected. This leads to lack of trust and customer retention is   difficult.
+* Price is the advantage of Airbnb which materializes if you are travelling in large groups.
+* The Airbnb could have the advantage on the outdoor area like the Red Rock Canyon National Conservation Area.
+* Airbnbs are generally just bed and breakfast which provide a place to stay with not many other facilities which makes them functional but less fancy and       attractive for the tourists.
+
+
+2. **Supply Side i.e. the real estate market of Las Vegas**
+
+* Real estate market in Las Vegas is currently stable with a median house price of $220K and 1- year appreciation rate of 9%.
+* There is a wide range of properties available from \$19K to \$21000K.
+
+
+3. **Demand Side i.e. the tourists who visit Las Vegas**
+
+* Among visitors who stayed overnight in Las Vegas, 86% stayed in a hotel.
+* Mean age of tourists visiting Las Vegas was 45.1 Years with 20% of them in the age group between 21-29.
+* Average size of a group was 2.2 visitors.
+* They stayed an average 4.4 days and 3.4 nights during the trip.
+* 15% of the visitors bought a tour package for their trip.
+
+
+4. **Market Regulations**
+
+Las Vegas has a lot of regulations concerning short term rentals.
+
+* A non-refundable $500 permit application fee on any would-be short-term rental operator.
+* Limiting overnight guests to 12 or fewer per property.
+* Denying such permits to any new Airbnbs within 660 feet of any existing listing.
+* If a home has five or more bedrooms, owners must also keep a licensed security company on call to tackle complaints.
+* Most parts have declared short term rentals illegal. 
+
+All the regulations seem fair when we consider that there are many jobs offered to local residents by these hotels or casinos. If the Airbnb take away the market from hotels, many people would lose their jobs, so to protect people not lose their jobs, it’s reasonable that local government want to limit the development of the Airbnb.
+
+But there is always a silver lining,
+
+AirBnB has been approved and is legal in the Las Vegas/Henderson market as of 10/14/2019 and since then there has been a steady boom in Airbnbs and also many people are interested in investing in the same.
+
+**So is Airbnb a good investment option?**
+
+*Advantages of Airbnb*
+
+* Low cost of investment as compared to investing in the hotel industry.
+* Operation and maintenance cost is also low.
+* Competition is less fierce than the hotel industry and is not monopolized by few major players.
+* Power of the Airbnb platform is a great advantage with network effects.
+* Ease of disinvestment as selling a housing property at the right price is possible.
+
+## VI. Data Exploration
+
+1. Check the proportion of listings with low booking vs high booking rates in Las Vegas. This enables us to understand and set a baseline for our analysis.
+
+*Answer:* We find that the number of houses with a low booking rate is way much larger. Almost 77% of the houses have low booking rates
+```{r}
+plot_high_booking <- 
+  ggplot(dfLasVegas,aes(x=high_booking_rate,fill="blue"))+
+  geom_bar() +ggtitle("How many houses have high booking rate?") +
+  geom_text(aes(label=scales::percent(..count../sum(..count..))),
+              stat='count',position=position_fill(vjust=0.5)) +
+  theme(
+    legend.position = "none", 
+    plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    legend.background = element_rect(fill = "transparent"), 
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.border = element_rect(colour = "black", fill=NA)
+    )+
+    labs(x="High booking rate", y = "Count")+
+  scale_fill_brewer(palette="Pastel1")
+ 
+plot_high_booking
+```
+
+2. Usually hotels provide a lot of complimentary services a pool is among them. Maybe listings in Airbnb don't have a pool, so people choose not to book, is this the reason?
+
+*Answer:* The plot shows that among houses with a low boooking rate, about 2/3 have pools. Besides, among houses with a high boooking rate, only a little bit more than 1/2 have pools. Thus, pool seems not a main factor that affect booking rate.
+```{r}
+percentData <- dfLasVegas %>% group_by(high_booking_rate) %>% count(pool) %>%
+    mutate(ratio=scales::percent(n/sum(n)))
+
+plot_pool <-
+  ggplot(data = dfLasVegas, aes(x=high_booking_rate,fill = pool))+
+  geom_bar(position="fill") +ggtitle("Is pool an important factor while booking?")+
+  geom_text(data=percentData, aes(y=n,label=ratio),position=position_fill(vjust=0.5)) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    legend.background = element_rect(fill = "transparent"), 
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.border = element_rect(colour = "black", fill=NA)
+    )+
+  labs(x="High booking rate", y = "Proportion of listings on Airbnb")+
+  scale_fill_brewer(palette="Pastel1", name = "Has pool?")
+
+plot_pool
+```
+
+3. If pool is not the reason, how about listings that are family friendly family_kids_friendly?
+
+*Answer:* The plot shows that among listings with a low boooking rate, about 72% aren't family_kids_friendly. Thus, family_kids_friendly seems to affect booking rate positively.
+```{r}
+percentData <- dfLasVegas %>% group_by(high_booking_rate) %>% count(family_kids_friendly) %>%
+    mutate(ratio=scales::percent(n/sum(n)))
+
+plot_family_kid <-
+  ggplot(data = dfLasVegas, aes(x=high_booking_rate,fill = family_kids_friendly))+
+  geom_bar(position="fill") +ggtitle("Is family kids friendly environment an important factor while booking?")+
+  geom_text(data=percentData, aes(y=n,label=ratio),position=position_fill(vjust=0.5)) +
+  theme(
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    legend.background = element_rect(fill = "transparent"), 
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.border = element_rect(colour = "black", fill=NA)
+    )+
+  labs(x="High booking rate", y = "Proportion of listings on Airbnb")+
+  scale_fill_brewer(palette="Pastel1", name = "Family kids friendly?")
+
+plot_family_kid
+```
+
+4. How about parking issue? Will people refuse to rent a property becuase of its lack of free parking?
+
+*Answer:* The plot shows that among properties with a low boooking rate, almost all of them provide free parking. Also, almost all of the properties have free parking. So parking is not a big factor for booking rate.
+```{r}
+percentData <- dfLasVegas %>% group_by(high_booking_rate) %>% count(free_parking_on_premises) %>%
+    mutate(ratio=scales::percent(n/sum(n)))
+
+plot_parking<-
+  ggplot(data = dfLasVegas, aes(x=high_booking_rate,fill = free_parking_on_premises)) +
+  geom_bar(position = "fill") + ggtitle("Is free parking an important factor while booking?")+
+  geom_text(data=percentData, aes(y=n,label=ratio),position=position_fill(vjust=0.5)) +
+  theme(
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    legend.background = element_rect(fill = "transparent"), 
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.border = element_rect(colour = "black", fill=NA)
+    )+
+  labs(x="High booking rate", y = "Proportion of listings on Airbnb")+
+  scale_fill_brewer(palette="Pastel1", name = "Has free parking?")
+
+plot_parking
+
+```
+
+5. Many customers will send hosts questions while reviewing airbnb website, some people will book other houses if the host cannot reply quickyly. Seems host_response_time is related to high booking rate in this way, is this true?
+
+*Answer:* About 84% of the hosts with high booking rate responded within the hour, this number is only close to 63% for the listings with low booking rate. Thus, a quick response does have an impact on the booking rates.
+```{r}
+library(ggrepel)
+
+percentData <- dfLasVegas %>% group_by(high_booking_rate) %>% count(host_response_time) %>%
+    mutate(ratio=scales::percent(n/sum(n)))
+
+plot_time<-
+  ggplot(data = dfLasVegas, aes(x=high_booking_rate,fill = host_response_time )) +
+  geom_bar(position = "fill") +ggtitle("Is host response time an important factor while booking?") +
+  geom_text_repel(data=percentData, aes(y=n,label=ratio),position=position_fill(vjust=0.5)) +
+  theme(
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    legend.background = element_rect(fill = "transparent"), 
+    legend.box.background = element_rect(fill = "transparent"),
+    panel.border = element_rect(colour = "black", fill=NA)
+    )+
+  labs(x="High booking rate", y = "Proportion of listings on Airbnb")+
+  scale_fill_brewer(palette="Pastel1", name = "Host response time")
+
+plot_time
+```
+
+6. Explore whether amenities is associated with high booking rate
+
+*Answer:* The boxplot shows the mean of number of amenities is higher for the houses whth a high_booking_rate, so it seems to be associated with high booking rate.
+```{r}
+plot_no_amentities<-
+  ggplot(data=dfLasVegas, aes(x=high_booking_rate, y= no_of_amenities, fill = high_booking_rate)) +
+  geom_boxplot(alpha = 0.3) + ggtitle("Number of amenities broken down by high booking rate")+
+  theme(
+    legend.position="none",
+    plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA)
+    )+
+  labs(x="High booking rate", y = "Number of amenities")+
+  scale_fill_brewer(palette="Pastel1")
+  
+    
+
+ggplotly(plot_no_amentities)
+plot_no_amentities
+```
+
+
+## VII. Prediction of the High Booking Rate
+
+**For the Investor who wants to buy a new property**
+
+It is essential for us to be able to predict if a new property will have a high booking rate or not accurately. This will enable new investors to make informed investment choices and decisions.
+
+For this purpose we tried multiple models viz., Linear Probability model, Logistic Regression model, Latent discriminant analysis, Quadratic discriminant analysis, KNN model, Decision tree and bagged trees. 
+
+Based on the comparision of performance metrics of the above models on the test data, we decided to go ahead with bagged trees model for our business case.
+Below is the predictive analysis,
+
+Split the data set into test and train sets
+```{r}
+#Setting the seed
+set.seed(123)
+
+#Partitioning the dataset into a 70% - 30% split
+dfLasVegasTrain <- dfLasVegas %>% sample_frac(.7)
+dfLasVegasTest <- setdiff(dfLasVegas, dfLasVegasTrain)
+```
+
+Run the model on the train data using "treebag" method in the caret library.
+
+```{r}
+set.seed(123)
+fitBaggedTree <- train(high_booking_rate ~ .-id, data=dfLasVegasTrain, method='treebag', trControl=trainControl(method='cv', number=10))
+```
+
+See the variables plotted by importance (according to the bagged tree)
+
+```{r}
+plot(varImp(fitBaggedTree), top=20)
+```
+
+Make predictions and generate the predicted Probability for each observation in the test data set
+
+```{r}
+resultsBaggedTree <-
+  fitBaggedTree %>% 
+  predict(dfLasVegasTest, type='prob') %>% 
+  bind_cols(dfLasVegasTest, predictedProb=.$'1')
+```
+
+Before we start the analysis based on sensitivity, specificity and accuracy lets define some terms with respect to our business case,
+
+* **False Positives** : When the model predicts the listing to have high booking rate but in reality it does not have a high booking rate.
+* **False Negatives** : When the model predicts the listing to not have high booking rate but in reality it does have a high booking rate.
+
+We need a model that will reduce the False Positives as they can cause real monetory loses to the investor. False Negatives lead to the investor losing out on a potentially good investment but the loss is virtual as there is no real monetary loses involved.
+
+Thus, generally we would like to focus on specificity and accuracy as our metrics and then sensitivity.
+
+Get the sensitivity, specificity and accuracy using the AUC library for all the possible cut off values.
+
+```{r}
+library(AUC)
+sens<- AUC::sensitivity(resultsBaggedTree$predictedProb,resultsBaggedTree$high_booking_rate, perc.rank = FALSE)
+spec <- AUC::specificity(resultsBaggedTree$predictedProb,resultsBaggedTree$high_booking_rate, perc.rank = FALSE)
+acc <- AUC::accuracy(resultsBaggedTree$predictedProb,resultsBaggedTree$high_booking_rate, perc.rank = FALSE)
+```
+
+Plot the sensitivity, specificity and accuracy in a single plot.
+
+```{r}
+plot <-
+  ggplot()+
+  geom_line(aes(x=sens$cutoffs,y=sens$measure,colour="sensitivity"),size=1)+
+  geom_line(aes(x=spec$cutoffs,y=spec$measure, colour="specificity"),size=1)+
+  geom_line(aes(x=acc$cutoffs,y=acc$measure,colour="accuracy"),size=1)+
+  xlab("cutoff") + ylab("measure") +
+  ggtitle("Performance tradeoff based on cutoff") +
+  guides(colour=guide_legend(title=NULL)) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    text = element_text(size = 13),
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    legend.background = element_rect(fill = "transparent"), 
+    legend.box.background = element_rect(fill = "transparent"),
+    legend.key = element_rect(fill = "transparent"),
+    panel.border = element_rect(colour = "black", fill=NA)
+    )+
+  scale_color_manual(name = "", values = c("accuracy"='#4ca0e6',"sensitivity"='#45b568',"specificity"='#e83548'))
+
+ggplotly(plot)
+plot
+
+```
+
+
+**For the Risk Neutral Investor:**
+
+The Risk neutral investor does not take risk into account while investing. So all he would care about is the accuracy of the prediction. As per the graph plotted earlier the highest accuracy is achieved at a cut off of 0.5
+
+```{r}
+resultsBaggedTree <- resultsBaggedTree %>%
+                    mutate(predictedClass = as.factor(ifelse(predictedProb > 0.5, 1, 0)),)
+```
+
+Below is the performance of the model at a cut off of 0.5
+
+```{r}
+resultsBaggedTree %>% 
+  xtabs(~predictedClass+high_booking_rate, .) %>% 
+  confusionMatrix(positive = '1')
+```
+
+Below is the confusion matrix of the model prediction. This looks quite good with high specificity which is desirable.
+
+```{r}
+resultsBaggedTree %>% 
+  conf_mat(truth=high_booking_rate, estimate=predictedClass) %>% 
+  autoplot(type="heatmap") +
+  scale_fill_gradient(low="#dae5f7", high ="#2455a3")
+```
+
+
+**For the Risk Seeking Investor:**
+
+The Risk seeking investor cares about making a profit while investing. They may not mind a few losses So False negatives should be as low as possible as the false negatives means investment opportunity missed. So all they would care about is the sensitivity of the prediction. As per the graph plotted earlier the highest sensitivity is achieved at a cut off of 0.3 without largely compromising on the accuracy and specificity.
+
+```{r}
+resultsBaggedTree <- resultsBaggedTree %>%
+                    mutate(predictedClass = as.factor(ifelse(predictedProb > 0.3, 1, 0)),)
+```
+
+Below is the performance of the model at a cut off of 0.3
+```{r}
+resultsBaggedTree %>% 
+  xtabs(~predictedClass+high_booking_rate, .) %>% 
+  confusionMatrix(positive = '1')
+```
+
+Below is the confusion matrix of the model prediction. This looks quite good with high sensitivity which is desirable for a risk seeking investor as it can make sure they do not miss out on any property that has a chance of high booking rate.
+
+```{r}
+resultsBaggedTree %>% 
+  conf_mat(truth=high_booking_rate, estimate=predictedClass) %>% 
+  autoplot(type="heatmap") +
+  scale_fill_gradient(low="#dae5f7", high ="#2455a3")
+```
+
+**For the Risk Averse Investor:**
+
+The Risk Averse investor cares about making a profit while investing but without making any loses. They want to minimize the risk as much as possible. The False positives should be as low as possible. So all they would care about is the specificity of the prediction. As per the graph plotted earlier the highest specificity is achieved at a cut off of 0.7 without largely compromising on accuracy and sensitivity.
+
+```{r}
+resultsBaggedTree <- resultsBaggedTree %>%
+                    mutate(predictedClass = as.factor(ifelse(predictedProb > 0.7, 1, 0)),)
+```
+
+Below is the performance of the model at a cut off of 0.7
+
+```{r}
+resultsBaggedTree %>% 
+  xtabs(~predictedClass+high_booking_rate, .) %>% 
+  confusionMatrix(positive = '1')
+```
+
+Below is the confusion matrix of the model prediction. This looks quite good with high specificity which is desirable for a risk averse investor as it can make sure they invest only on property that has a chance of high booking rate.
+
+```{r}
+resultsBaggedTree %>% 
+  conf_mat(truth=high_booking_rate, estimate=predictedClass) %>% 
+  autoplot(type="heatmap") +
+  scale_fill_gradient(low="#dae5f7", high ="#2455a3")
+```
+
+## VIII. Variable Importance and Model Selection
+
+**For the Investor who is invested and wants to improve the booking rate**
+
+For someone who is invested and wants to improve the booking rate they need to look at the factors that influence the booking rate the most. The factors that can increase the chances of the listing having a high booking rate the to the maximum. 
+
+Model selection and variable importance can be done by a variety of methods viz., stepwise selection, backward or forward selection, Lasso, Ridge, Group Lasso or Elastic net. 
+
+We tried all the approaches and chose elastic net as it gave us the best of both lasso and ridge while giving us the highest accuracy in the test data.
+
+We used a grid search in elastic net to find the best tune.
+
+Below is the elastic net outputs,
+```{r}
+set.seed(123)
+dflTrain <- dfLasVegas %>% sample_frac(0.7)
+dflTest <- dplyr::setdiff(dfLasVegas,dflTrain)
+```
+
+```{r}
+set.seed(123)
+fitElasticNetGrid <- train(high_booking_rate ~ .-id, family='binomial', data=dflTrain, method='glmnet', trControl=trainControl(method='cv', number=10), tuneLength=10)
+```
+
+This graph shows us the important factors that an existing investor can use to upgrade himself and his listing.
+
+```{r}
+plot(varImp(fitElasticNetGrid), top = 20)
+```
+
+## IX. Explanatory modelling: The age old Logistic Regression to the Rescue
+
+Though we got the variable importance using elastic net model, it is really the logistic regression that will help us quantify the effect of the variables.
+
+Thus, we built a logistic model on the data as below.
+
+The variables were picked based on the statistical significance(derived from p-values in previous iterations) and business significance(derived from readings and research).
+
+```{r}
+fitLogistic <- glm(formula = high_booking_rate ~ review_scores_accuracy+review_scores_checkin+review_scores_rating+pool+wifi+instant_bookable+long_term_stays_allowed+refridgerator+jumio+family_kids_friendly+coffee_maker+laptop_friendly_workspace+availability_365 , data = dfLasVegas, family = binomial)
+summary(fitLogistic)
+```
+
+We can see the below coefficients which will help us get the odds ratio and comment on the change in odds for high booking rate based on each variable.
+
+This can be extremely essential when determining the strategy for upgrade of existing properties by the owners.
+
+```{r}
+exp(coef(fitLogistic))
+```
+
+## X. Conclusion and Discussion:
+
+* Though the Hotel industry is big and strong Airbnb could be the way to go for small investments
+* Good Reviews and long list of amenities go a long way in making it successful
+* Focus on customer service and be family friendly in your offerings
+* Lower price for large groups is the best bet
+
+## XI. References:
+
+* Real estate trends in Las Vegas,
+
+    https://www.brownellteamrealtors.com/market-statistics/
+    https://www.fortunebuilders.com/las-vegas-real-estate-market-trends/
+
+* Tourism Demographics,
+
+    https://assets.simpleviewcms.com/simpleview/image/upload/v1/clients/lasvegas/2018_Las_Vegas_Visitors_Profile_Study_94443c1d-334f-4d0b-b997-5c8800f990b0.pdf
+
+* Market Research,
+
+    https://www.investopedia.com/articles/personal-finance/031815/hotels-vs-airbnb-vegas-visitors.asp
+    https://www.investopedia.com/articles/personal-finance/031815/hotels-vs-airbnb-vegas-visitors.asp
+    https://www.cntraveler.com/story/why-airbnb-cant-crack-las-vegas
+    https://www.fox5vegas.com/news/local/short-term-vacation-rental-market-booming-in-las-vegas-valley-pushing-out-buyers/article_afff7ee4-b8d5-11e9-a333-6f54592625b0.html
+
+
